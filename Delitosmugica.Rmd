@@ -1,0 +1,205 @@
+---
+title: "Mapa del delito barrio mugica"
+output: html_document
+runtime: shiny
+resource_files:
+- 
+- comisarias.csv
+---   
+El objetivo del presente informe es dar cuenta de la situación del delito en el Barrio Mugica. Para dar cuenta de la inseguridad del barrio se compararon indicadores de delito con otros barrios populares radicados en la C.A.B.A
+
+
+
+
+```{r, Barrio Mugica, include=FALSE, echo= FALSE,results = FALSE, message=FALSE, , warning=FALSE }
+  library("tidyverse")
+  library("ggplot2")
+  library("shiny")
+  library("sf")
+  library("randomForest")
+  library("osmdata")
+  library("leaflet")
+  library("sp")
+  library("rgeos")
+  library("maps")
+  library("rmarkdown")
+  library("treemap")
+  library("lubridate")
+  library("rgdal")
+  library("lwgeom")
+  library("xlsx")
+  library("ggmap") 
+  library("htmltools")
+  library("plotly")
+  library("gapminder")
+  library("dplyr")
+  library("formattable")
+
+delitos2020 <- read.csv("delitos_2020.csv")
+
+delitos2020 <-delitos2020  %>%  filter(!is.na(delitos2020$latitud), !is.na(delitos2020$longitud)) 
+
+delitos2020 <-delitos2020  %>% st_as_sf(coords = c("longitud", "latitud"), crs = 4326)
+
+Mugicashp <- st_read("Mugicashp")
+
+Delitos_Mugica_2020 <- st_intersection(delitos2020, Mugicashp)
+
+Delitos_Mugica_2020_acumulados <- Delitos_Mugica_2020 %>% count(tipo)
+
+
+poblacion_caba <- 3078836
+
+
+```
+
+
+```{r, message=TRUE, warning=FALSE, include=FALSE,  results=FALSE}
+
+
+
+bp <- st_read("bp") %>% st_transform("+proj=longlat +datum=WGS84")
+
+delitos_bp <- st_intersection(bp,delitos2020)
+
+delitos_bp_acumulados <- delitos_bp %>% count(tipo)
+
+grafico_barras_bp_delito <- delitos_bp_acumulados %>%
+arrange(n) %>% mutate(tipo= factor(tipo, levels=tipo)) %>%  ggplot( aes(x=tipo, y=n)) +  geom_segment( aes(xend=tipo, yend=0)) + geom_point( size=4, color="orange") + coord_flip() + theme_bw() + labs(title = "Cantidad de delitos por tipo BP CABA Total") +xlab("")  +geom_text(aes(label=n),hjust=0.5, vjust=-1)
+
+
+ 
+
+```
+
+
+```{r, Delitos mugica sobre total de BP,  warning=FALSE, include=FALSE,  results=FALSE}
+
+porcentaje_BM_BP <- Delitos_Mugica_2020_acumulados %>% mutate(n = (Delitos_Mugica_2020_acumulados$n/delitos_bp_acumulados$n))
+
+
+grafico_BM_BP <- porcentaje_BM_BP %>%
+    arrange(n) %>% mutate(tipo=factor(tipo, levels=tipo),  ) %>%  ggplot( aes(x=tipo, y=(n))) +  geom_segment( aes(xend=tipo, yend=0)) + scale_y_continuous(labels = scales::percent) +  geom_point( size=4, color="orange") + coord_flip() + theme_bw() + labs(title = "Proporcion de delitos del BM sobre total BP") +xlab("")  +geom_text(aes(label=paste(round(n,2),"%"),hjust=0.5, vjust=-1))
+
+
+
+```
+
+```{r, lollipop comparar barrios ,  message=TRUE, warning=FALSE, include=FALSE,  results=FALSE}
+
+Delitos_Mugica_2020_acumulados_para_mergear <- Delitos_Mugica_2020_acumulados %>% cbind("Barrio Mugica") 
+
+names(Delitos_Mugica_2020_acumulados_para_mergear)[3] <- "Barrios"
+
+
+delitos_bp_acumulados_para_mergear <- delitos_bp_acumulados %>% cbind("Barrios Populares") 
+
+names(delitos_bp_acumulados_para_mergear)[3] <- "Barrios"
+
+mugica_y_bp_delitos <- rbind(delitos_bp_acumulados_para_mergear, Delitos_Mugica_2020_acumulados_para_mergear)
+
+ggplot(mugica_y_bp_delitos) +geom_segment( aes(x=tipo, xend=tipo, y=n, yend=n), color="grey")+ 
+  geom_point( aes(x=tipo, y=n), color=rgb(0.2,0.7,0.1,0.5), size=3 ) +
+  coord_flip()+
+  theme(
+    legend.position = "none",
+  ) +
+  xlab("") +
+  ylab("Value of Y")
+
+```
+
+
+
+
+
+
+```{r include=FALSE}
+
+poblacion_villas_2010 <- 170054
+
+poblacion_mugica <- 40000
+
+poblacion_mugica_sobre_total_bp <- percent(poblacion_mugica/poblacion_villas_2010)
+
+```
+
+
+
+
+```{r, include=FALSE}
+
+grafico_barras <- Delitos_Mugica_2020_acumulados %>%
+arrange(n) %>% mutate(tipo=factor(tipo, levels=tipo)) %>%  ggplot( aes(x=tipo, y=n)) +  geom_segment( aes(xend=tipo, yend=0)) + geom_point( size=4, color="orange") + coord_flip() + theme_bw() + labs(title = "Cantidad de delitos por tipo Barrio Mugica") +xlab("")  +geom_text(aes(label=n),hjust=0.5, vjust=-1)
+ 
+
+
+```
+
+```{r echo=FALSE}
+
+grafico_barras_bp_delito
+
+
+grafico_barras
+```
+
+Si bien el barrio mugica representa solo el 23% de la población de asentamientos informales, es responsable de una proporción mayor de los delitos, detallada a continuación.   
+
+
+
+
+```{r echo=FALSE}
+
+
+
+grafico_BM_BP
+
+
+```
+
+```{r echo=FALSE}
+
+fake_data <- Delitos_Mugica_2020
+ui <- fluidPage(
+  
+  # Application title
+  h1("Delitos barrio mugiica"),
+
+  # Inputs for country and symptom 
+  selectInput("tipo", "Seleccionar tipo de delito", c("Homicidio", "Hurto (sin violencia)", "Lesiones", "Robo (con violencia)
+"), multiple = TRUE), 
+
+  # Output with map
+  h2("Map"),
+  leafletOutput("map")
+  
+)
+
+server <- function(input, output) {
+  
+  filtered_data <- reactive({
+    fake_data %>%
+      filter( fake_data$tipo %in% input$tipo)
+  })
+  
+  output$map <- renderLeaflet({
+    leaflet(fake_data) %>%
+      addTiles() %>%
+      addMarkers(data=filtered_data())
+    
+
+  
+  })
+  
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+
+
+```
+
+
+```{r, mapa, echo=FALSE}
+
